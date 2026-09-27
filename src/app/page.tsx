@@ -1,10 +1,13 @@
 "use client";
 
 import React, { useState, useRef } from "react";
+import { Clock } from "lucide-react";
 import { UsernameInput } from "@/components/username-input";
 import { CheckDialog } from "@/components/check-dialog";
 import { ResultsSection } from "@/components/result-section";
 import { ProgressBar } from "@/components/progress-bar";
+import { StatusAlerts } from "@/components/status-alerts";
+import { UserDetailDialog } from "@/components/user-detail-dialog";
 import type { CheckResult } from "@/lib/instagram";
 
 export default function HomePage() {
@@ -13,20 +16,32 @@ export default function HomePage() {
   const [queuedUsernames, setQueuedUsernames] = useState<string[]>([]);
   const [isChecking, setIsChecking] = useState(false);
 
-  const [activeList, setActiveList] = useState<string[]>([]);
-  const [suspendedList, setSuspendedList] = useState<string[]>([]);
+  const [activeList, setActiveList] = useState<CheckResult[]>([]);
+  const [suspendedList, setSuspendedList] = useState<CheckResult[]>([]);
   const [errorList, setErrorList] = useState<CheckResult[]>([]);
   const [progress, setProgress] = useState<{ current: number; total: number }>({
     current: 0,
     total: 0,
   });
 
+  const [selectedActiveUser, setSelectedActiveUser] =
+    useState<CheckResult | null>(null);
+  const [isUserDetailOpen, setIsUserDetailOpen] = useState(false);
+  const [timeTaken, setTimeTaken] = useState<number | null>(null);
+
   const abortControllerRef = useRef<AbortController | null>(null);
+  const startTimeRef = useRef<number>(0);
 
   // Triggered when user clicks "Start Checking" in the input form
   const handleOpenConfirm = (usernames: string[]) => {
     setQueuedUsernames(usernames);
     setIsDialogOpen(true);
+  };
+
+  // Triggered when user clicks on an active user item in the list
+  const handleSelectActiveUser = (user: CheckResult) => {
+    setSelectedActiveUser(user);
+    setIsUserDetailOpen(true);
   };
 
   // Triggered when user confirms "Check" in the dialog
@@ -37,8 +52,10 @@ export default function HomePage() {
     setActiveList([]);
     setSuspendedList([]);
     setErrorList([]);
+    setTimeTaken(null);
     setProgress({ current: 0, total: queuedUsernames.length });
     setIsChecking(true);
+    startTimeRef.current = performance.now();
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -48,7 +65,7 @@ export default function HomePage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/x-ndjson, application/json",
+          Accept: "application/x-ndjson, application/json",
         },
         body: JSON.stringify({
           usernames: queuedUsernames,
@@ -71,7 +88,7 @@ export default function HomePage() {
             username: u,
             status: "error",
             error: errorMsg,
-          }))
+          })),
         );
         setIsChecking(false);
         return;
@@ -103,9 +120,9 @@ export default function HomePage() {
               setProgress({ current: count, total: queuedUsernames.length });
 
               if (item.status === "active") {
-                setActiveList((prev) => [...prev, item.username]);
+                setActiveList((prev) => [...prev, item]);
               } else if (item.status === "suspended") {
-                setSuspendedList((prev) => [...prev, item.username]);
+                setSuspendedList((prev) => [...prev, item]);
               } else {
                 setErrorList((prev) => [...prev, item]);
               }
@@ -123,9 +140,9 @@ export default function HomePage() {
             setProgress({ current: count, total: queuedUsernames.length });
 
             if (item.status === "active") {
-              setActiveList((prev) => [...prev, item.username]);
+              setActiveList((prev) => [...prev, item]);
             } else if (item.status === "suspended") {
-              setSuspendedList((prev) => [...prev, item.username]);
+              setSuspendedList((prev) => [...prev, item]);
             } else {
               setErrorList((prev) => [...prev, item]);
             }
@@ -137,15 +154,15 @@ export default function HomePage() {
         // Fallback for non-streaming response
         const data = await response.json();
         const results = (data.results || []) as CheckResult[];
-        const actives: string[] = [];
-        const suspended: string[] = [];
+        const actives: CheckResult[] = [];
+        const suspended: CheckResult[] = [];
         const errors: CheckResult[] = [];
 
         for (const item of results) {
           if (item.status === "active") {
-            actives.push(item.username);
+            actives.push(item);
           } else if (item.status === "suspended") {
-            suspended.push(item.username);
+            suspended.push(item);
           } else {
             errors.push(item);
           }
@@ -165,43 +182,57 @@ export default function HomePage() {
         queuedUsernames.map((u) => ({
           username: u,
           status: "error",
-          error: err instanceof Error ? err.message : "Failed to connect to server",
-        }))
+          error:
+            err instanceof Error ? err.message : "Failed to connect to server",
+        })),
       );
     } finally {
       setIsChecking(false);
+      setTimeTaken(
+        Math.round((performance.now() - startTimeRef.current) / 100) / 10,
+      );
       abortControllerRef.current = null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
-      {/* Background ambient gradient glow */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-gradient-to-b from-indigo-600/15 via-purple-600/10 to-transparent blur-3xl opacity-70" />
-      </div>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-zinc-800 selection:text-zinc-100">
+      {/* Top-Right Floating Status Alerts */}
+      <StatusAlerts
+        activeCount={activeList.length}
+        suspendedCount={suspendedList.length}
+        isChecking={isChecking}
+      />
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
+      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-6 sm:space-y-8">
         {/* Header Section */}
         <header className="text-center space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 font-medium shadow-sm">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-400"></span>
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400" />
             <span>Real-time Status Checker</span>
             <span className="text-zinc-600">•</span>
-            <span className="text-zinc-400">Next.js 16</span>
+            <a
+              href="https://t.me/Arynzo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-400 hover:text-sky-300 transition-colors duration-200"
+            >
+              @Arynzo
+            </a>
           </div>
 
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-100">
             Instagram Username Checker
           </h1>
 
-          <p className="text-zinc-400 text-sm sm:text-base max-w-xl mx-auto">
-            Check usernames quickly. Paste lines with prefixes or plain text to detect Active and Suspended accounts.
+          <p className="text-zinc-400 text-sm sm:text-base max-w-xl mx-auto px-2">
+            Check usernames quickly. Paste lines with prefixes or plain text to
+            detect Active and Suspended accounts.
           </p>
         </header>
 
         {/* Input & Form Card */}
-        <section className="rounded-3xl border border-zinc-800/80 bg-zinc-900/40 p-5 sm:p-7 backdrop-blur-md shadow-2xl shadow-black/40">
+        <section className="rounded-3xl border border-zinc-800/80 bg-zinc-900/40 p-4 sm:p-7 backdrop-blur-md shadow-2xl shadow-black/40">
           <UsernameInput
             input={inputText}
             onChange={setInputText}
@@ -212,7 +243,7 @@ export default function HomePage() {
 
         {/* Progress Bar (visible during checking or after completion) */}
         {(isChecking || progress.total > 0) && (
-          <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+          <section className="animate-in fade-in duration-300">
             <ProgressBar
               current={progress.current}
               total={progress.total}
@@ -223,21 +254,33 @@ export default function HomePage() {
 
         {/* Results Section */}
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between px-1">
             <h2 className="text-lg font-semibold text-zinc-200 flex items-center gap-2">
               <span>Results</span>
-              {(activeList.length > 0 || suspendedList.length > 0 || errorList.length > 0) && (
+              {(activeList.length > 0 ||
+                suspendedList.length > 0 ||
+                errorList.length > 0) && (
                 <span className="text-xs text-zinc-500 font-normal">
-                  ({activeList.length + suspendedList.length + errorList.length} total)
+                  ({activeList.length + suspendedList.length + errorList.length}{" "}
+                  total)
                 </span>
               )}
             </h2>
+
+            {/* Time taken — appears after checking completes */}
+            {timeTaken !== null && !isChecking && (
+              <span className="flex items-center gap-1 text-[11px] text-zinc-500 font-mono">
+                <Clock className="w-3 h-3 text-zinc-600" />
+                {timeTaken}s
+              </span>
+            )}
           </div>
 
           <ResultsSection
             activeList={activeList}
             suspendedList={suspendedList}
             errorList={errorList}
+            onSelectActiveUser={handleSelectActiveUser}
           />
         </section>
       </main>
@@ -250,9 +293,19 @@ export default function HomePage() {
         onConfirm={handleStartChecking}
       />
 
+      {/* Active User Detail Popup Modal (Only opens for active users) */}
+      <UserDetailDialog
+        user={selectedActiveUser}
+        isOpen={isUserDetailOpen}
+        onOpenChange={setIsUserDetailOpen}
+      />
+
       {/* Footer */}
-      <footer className="border-t border-zinc-900 py-6 text-center text-xs text-zinc-500">
-        <p>Instagram Username Checker • Server-side verification & controlled concurrency</p>
+      <footer className="border-t border-zinc-900 py-6 text-center text-xs text-zinc-500 px-4">
+        <p>
+          Instagram Username Checker • Server-side verification & controlled
+          concurrency
+        </p>
       </footer>
     </div>
   );

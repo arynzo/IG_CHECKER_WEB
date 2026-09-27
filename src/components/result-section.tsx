@@ -4,32 +4,54 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, UserCheck, UserX, AlertTriangle } from "lucide-react";
+import { Check, Copy, UserCheck, UserX, AlertTriangle, Eye, ChevronRight } from "lucide-react";
 import type { CheckResult } from "@/lib/instagram";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ResultCardProps {
   type: "active" | "suspended" | "error";
   title: string;
-  items: Array<string | CheckResult>;
+  items: CheckResult[];
   emptyText: string;
+  onSelectUser?: (user: CheckResult) => void;
 }
 
-function SingleResultCard({ type, title, items, emptyText }: ResultCardProps) {
+const listContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04,
+    },
+  },
+};
+
+const listItemVariants = {
+  hidden: { opacity: 0, y: 6 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.2 } },
+};
+
+function SingleResultCard({
+  type,
+  title,
+  items,
+  emptyText,
+  onSelectUser,
+}: ResultCardProps) {
   const [copied, setCopied] = useState(false);
 
   // Extract raw usernames only (no emojis) for clipboard
-  const usernamesOnly = items.map((item) =>
-    typeof item === "string" ? item : item.username
-  );
+  const usernamesOnly = items.map((item) => item.username);
 
-  const handleCopy = async () => {
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (usernamesOnly.length === 0) return;
     try {
       await navigator.clipboard.writeText(usernamesOnly.join("\n"));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback if clipboard API fails
+      // Fallback
       const textarea = document.createElement("textarea");
       textarea.value = usernamesOnly.join("\n");
       document.body.appendChild(textarea);
@@ -120,34 +142,77 @@ function SingleResultCard({ type, title, items, emptyText }: ResultCardProps) {
             <p className="text-sm text-zinc-500 font-medium">{emptyText}</p>
           </div>
         ) : (
-          <div className="max-h-80 overflow-y-auto pr-1 space-y-1.5 scrollbar-thin scrollbar-thumb-zinc-800">
-            {items.map((item, idx) => {
-              const username = typeof item === "string" ? item : item.username;
-              const errorMsg = typeof item !== "string" ? item.error : undefined;
+          <motion.div
+            variants={listContainerVariants}
+            initial="hidden"
+            animate="show"
+            className="max-h-80 overflow-y-auto pr-1 space-y-1.5 scrollbar-thin scrollbar-thumb-zinc-800"
+          >
+            <AnimatePresence>
+              {items.map((item, idx) => {
+                const username = item.username;
+                const errorMsg = item.error;
+                const isActive = type === "active";
 
-              return (
-                <div
-                  key={`${username}-${idx}`}
-                  className="flex items-center justify-between px-3 py-2 rounded-lg text-sm bg-zinc-950/40 border border-zinc-800/60 hover:bg-zinc-800/40 hover:border-zinc-700/60 transition-colors group"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-sm select-none" aria-hidden="true">
-                      {config.emoji}
-                    </span>
-                    <span className="font-mono text-zinc-200 truncate select-text">
-                      {username}
-                    </span>
-                  </div>
+                return (
+                  <motion.div
+                    key={`${username}-${idx}`}
+                    variants={listItemVariants}
+                    layout
+                    onClick={() => {
+                      if (isActive && onSelectUser) {
+                        onSelectUser(item);
+                      }
+                    }}
+                    role={isActive ? "button" : undefined}
+                    tabIndex={isActive ? 0 : undefined}
+                    onKeyDown={(e) => {
+                      if (isActive && onSelectUser && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        onSelectUser(item);
+                      }
+                    }}
+                    className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all duration-150 group ${
+                      isActive
+                        ? "bg-zinc-950/50 border border-emerald-900/30 hover:bg-emerald-950/30 hover:border-emerald-700/50 cursor-pointer shadow-sm hover:shadow"
+                        : "bg-zinc-950/40 border border-zinc-800/60 cursor-default"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-sm select-none" aria-hidden="true">
+                        {config.emoji}
+                      </span>
+                      <span className="font-mono text-zinc-200 truncate select-text">
+                        <span className="text-zinc-500">@</span>{username}
+                      </span>
+                      {isActive && item.profile?.fullName && (
+                        <span className="text-xs text-zinc-500 truncate hidden sm:inline max-w-[120px]">
+                          • {item.profile.fullName}
+                        </span>
+                      )}
+                    </div>
 
-                  {errorMsg && (
-                    <span className="text-xs text-amber-400/90 truncate max-w-[200px] ml-2 text-right">
-                      {errorMsg}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      {errorMsg && (
+                        <span className="text-xs text-amber-400/90 truncate max-w-[180px] text-right">
+                          {errorMsg}
+                        </span>
+                      )}
+
+                      {/* Active users show interactive View badge */}
+                      {isActive && (
+                        <span className="inline-flex items-center gap-1 text-xs text-zinc-400 group-hover:text-emerald-300 font-medium transition-colors">
+                          <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                          <span className="hidden xs:inline text-[11px]">Details</span>
+                          <ChevronRight className="w-3 h-3 text-zinc-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+                        </span>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </motion.div>
         )}
       </CardContent>
     </Card>
@@ -155,15 +220,17 @@ function SingleResultCard({ type, title, items, emptyText }: ResultCardProps) {
 }
 
 interface ResultsContainerProps {
-  activeList: string[];
-  suspendedList: string[];
+  activeList: CheckResult[];
+  suspendedList: CheckResult[];
   errorList: CheckResult[];
+  onSelectActiveUser?: (user: CheckResult) => void;
 }
 
 export function ResultsSection({
   activeList,
   suspendedList,
   errorList,
+  onSelectActiveUser,
 }: ResultsContainerProps) {
   const hasErrors = errorList.length > 0;
 
@@ -176,9 +243,10 @@ export function ResultsSection({
           title="Active"
           items={activeList}
           emptyText="No active usernames yet."
+          onSelectUser={onSelectActiveUser}
         />
 
-        {/* Suspended Section */}
+        {/* Suspended Section - strictly not clickable */}
         <SingleResultCard
           type="suspended"
           title="Suspended"
@@ -187,7 +255,7 @@ export function ResultsSection({
         />
       </div>
 
-      {/* Errors Section (only shown when errors occur to keep primary UI focused) */}
+      {/* Errors Section (only shown when errors occur) */}
       {hasErrors && (
         <div className="mt-4">
           <SingleResultCard

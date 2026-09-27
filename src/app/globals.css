@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -12,15 +12,54 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
 }
+
+/* ─── Dialog Animations ─────────────────────────────────────── */
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes overlayOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/*
+  Dialog open: scale up + subtle upward slide — both transforms anchored at the
+  Radix center point so the dialog always expands from the middle of the screen.
+*/
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.92) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) translateY(0px);
+  }
+}
+
+@keyframes dialogOut {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) translateY(0px);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.94) translateY(6px);
+  }
+}
+
+.animate-overlay-in  { animation: overlayIn  200ms ease forwards; }
+.animate-overlay-out { animation: overlayOut 160ms ease forwards; }
+
+/* Spring-like cubic-bezier (overshoot slightly) for the open, snappy ease for close */
+.animate-dialog-in  { animation: dialogIn  320ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-dialog-out { animation: dialogOut 180ms cubic-bezier(0.4, 0, 1, 1) forwards; }

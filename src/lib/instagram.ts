@@ -7,11 +7,23 @@
 
 export type CheckResultStatus = "active" | "suspended" | "error";
 
+export interface UserProfileInfo {
+  fullName?: string;
+  mediaCount?: number;
+  followerCount?: number;
+  followingCount?: number;
+  isVerified?: boolean;
+  isPrivate?: boolean;
+  profilePicUrl?: string;
+  biography?: string;
+}
+
 export interface CheckResult {
   username: string;
   status: CheckResultStatus;
   error?: string;
   statusCode?: number;
+  profile?: UserProfileInfo;
 }
 
 const REQUEST_TIMEOUT_MS = 10000;
@@ -170,22 +182,38 @@ export async function checkInstagramUsername(username: string): Promise<CheckRes
 
     // HTTP 200: Check for active user or fail messages
     if (statusCode === 200) {
-      const hasActiveUser = parsedObjects.some((obj) => {
-        if (!obj || typeof obj !== "object") return false;
-        const user = obj.user as Record<string, unknown> | undefined;
-        if (!user || typeof user !== "object") return false;
-        return (
-          user.pk !== undefined ||
-          user.id !== undefined ||
-          typeof user.username === "string"
-        );
-      });
+      let activeUserProfile: UserProfileInfo | undefined;
 
-      if (hasActiveUser) {
+      for (const obj of parsedObjects) {
+        if (!obj || typeof obj !== "object") continue;
+        const user = obj.user as Record<string, unknown> | undefined;
+        if (
+          user &&
+          typeof user === "object" &&
+          (user.pk !== undefined ||
+            user.id !== undefined ||
+            typeof user.username === "string")
+        ) {
+          activeUserProfile = {
+            fullName: typeof user.full_name === "string" ? user.full_name : "",
+            mediaCount: typeof user.media_count === "number" ? user.media_count : 0,
+            followerCount: typeof user.follower_count === "number" ? user.follower_count : 0,
+            followingCount: typeof user.following_count === "number" ? user.following_count : 0,
+            isVerified: Boolean(user.is_verified),
+            isPrivate: Boolean(user.is_private),
+            profilePicUrl: typeof user.profile_pic_url === "string" ? user.profile_pic_url : undefined,
+            biography: typeof user.biography === "string" ? user.biography : "",
+          };
+          break;
+        }
+      }
+
+      if (activeUserProfile) {
         return {
           username: cleanUsername,
           status: "active",
           statusCode: 200,
+          profile: activeUserProfile,
         };
       }
 

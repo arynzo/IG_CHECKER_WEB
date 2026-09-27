@@ -2,8 +2,16 @@
 
 import React, { useState, useId } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, Sparkles, Trash2, AlertCircle } from "lucide-react";
+import {
+  Loader2,
+  Play,
+  Sparkles,
+  Trash2,
+  AlertCircle,
+  User,
+  ClipboardPaste,
+  Check,
+} from "lucide-react";
 import { parseUsernames } from "@/lib/username-parser";
 
 interface UsernameInputProps {
@@ -13,13 +21,15 @@ interface UsernameInputProps {
   isChecking: boolean;
 }
 
-const SAMPLE_INPUT = `USERNAME: instagram
-natgeo
-USERNAME = cristiano
-nike
-USERNAME - this_user_does_not_exist_404xyz999
-username taylor_swift_fake_suspended_abc123
-instagram`;
+const SAMPLE_INPUT = `USERNAME = arynzo
+USERNAME: cristiano
+username - nike
+user = instagram
+
+user1
+user2
+user3
+`;
 
 export function UsernameInput({
   input,
@@ -28,6 +38,7 @@ export function UsernameInput({
   isChecking,
 }: UsernameInputProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [pasteDone, setPasteDone] = useState(false);
   const textareaId = useId();
 
   const parsedUsernames = parseUsernames(input);
@@ -42,7 +53,9 @@ export function UsernameInput({
     }
 
     if (parsedUsernames.length === 0) {
-      setValidationError("No valid usernames found. Please check your input format.");
+      setValidationError(
+        "No valid usernames found. Please check your input format.",
+      );
       return;
     }
 
@@ -59,22 +72,33 @@ export function UsernameInput({
     setValidationError(null);
   };
 
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      // Append to existing input (or set directly if empty)
+      onChange(input ? input + "\n" + text : text);
+      setValidationError(null);
+      setPasteDone(true);
+      setTimeout(() => setPasteDone(false), 1500);
+    } catch {
+      // Clipboard API blocked — focus the textarea so the user can Ctrl+V manually
+      document.getElementById(textareaId)?.focus();
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label
           htmlFor={textareaId}
-          className="text-sm font-semibold text-zinc-200 flex items-center gap-2"
+          className="text-sm font-semibold text-zinc-200"
         >
-          <span>Instagram Usernames Input</span>
-          {parsedUsernames.length > 0 && (
-            <Badge variant="secondary" className="font-mono text-xs text-indigo-300 border-indigo-800/40">
-              {parsedUsernames.length} {parsedUsernames.length === 1 ? "username" : "usernames"} parsed
-            </Badge>
-          )}
+          Instagram Usernames Input
         </label>
 
-        <div className="flex items-center gap-2 text-xs">
+        {/* Right side: Sample · Clear · [parsed count] */}
+        <div className="flex items-center gap-1.5">
           <Button
             type="button"
             variant="ghost"
@@ -84,21 +108,30 @@ export function UsernameInput({
             className="h-7 text-xs text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 gap-1 px-2"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            Load Sample
+            Sample
           </Button>
 
           {input && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleClear}
-              disabled={isChecking}
-              className="h-7 text-xs text-zinc-400 hover:text-red-300 hover:bg-zinc-800 gap-1 px-2"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClear}
+                disabled={isChecking}
+                className="h-7 text-xs text-zinc-400 hover:text-red-300 hover:bg-zinc-800 gap-1 px-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear
+              </Button>
+
+              {parsedUsernames.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono text-indigo-400 bg-indigo-950/60 border border-indigo-800/40 rounded-md px-1.5 py-0.5 leading-none whitespace-nowrap">
+                  <User className="w-2.5 h-2.5" />
+                  {parsedUsernames.length}
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -119,9 +152,38 @@ export function UsernameInput({
           autoComplete="off"
         />
 
-        <div className="flex items-center justify-between px-3 py-2 border-t border-zinc-800/60 text-xs text-zinc-500">
-          <span>Supports plain lines, prefix formats, and deduplication</span>
-          <span>{lineCount} {lineCount === 1 ? "line" : "lines"}</span>
+        {/* Bottom bar: hint · line count · paste button */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-t border-zinc-800/60 text-xs text-zinc-500">
+          <span className="hidden sm:block">
+            Supports plain lines, prefix formats, and deduplication
+          </span>
+          <span className="sm:hidden">Plain lines &amp; prefix formats</span>
+
+          <div className="flex items-center gap-2.5 shrink-0 ml-2">
+            <span>{lineCount} {lineCount === 1 ? "line" : "lines"}</span>
+
+            {/* Paste button — sits flush in the bottom bar, never overlaps textarea */}
+            <button
+              type="button"
+              onClick={handlePaste}
+              disabled={isChecking}
+              title="Paste from clipboard"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors duration-150 disabled:opacity-40
+                border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 hover:border-zinc-600"
+            >
+              {pasteDone ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span className="text-emerald-400">Pasted</span>
+                </>
+              ) : (
+                <>
+                  <ClipboardPaste className="w-3 h-3" />
+                  <span>Paste</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
