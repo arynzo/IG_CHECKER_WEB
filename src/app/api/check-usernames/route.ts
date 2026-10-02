@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkInstagramUsername, type CheckResult } from "@/lib/instagram";
+import {
+  checkInstagramUsername,
+  fetchInstagramAuthToken,
+  type CheckResult,
+} from "@/lib/instagram";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +99,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Fetch fresh dynamic token from endpoint before starting checks
+    const authToken = await fetchInstagramAuthToken();
+
     // Progressive streaming response
     if (isStreamRequested) {
       const encoder = new TextEncoder();
@@ -106,7 +113,7 @@ export async function POST(req: NextRequest) {
               cleanedUsernames,
               CONCURRENCY_LIMIT,
               async (uname) => {
-                return await checkInstagramUsername(uname);
+                return await checkInstagramUsername(uname, authToken);
               },
               async (result: CheckResult) => {
                 const chunk = JSON.stringify(result) + "\n";
@@ -141,7 +148,7 @@ export async function POST(req: NextRequest) {
       cleanedUsernames,
       CONCURRENCY_LIMIT,
       async (uname) => {
-        return await checkInstagramUsername(uname);
+        return await checkInstagramUsername(uname, authToken);
       }
     );
 

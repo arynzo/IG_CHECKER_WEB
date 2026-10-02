@@ -27,10 +27,12 @@ interface UserDetailDialogProps {
 }
 
 function formatNumber(num?: number): string {
-  if (num === undefined || num === null) return "0";
+  if (num === undefined || num === null || isNaN(num)) return "0";
+  if (num < 10000) return num.toLocaleString();
   return new Intl.NumberFormat("en-US", {
     notation: "compact",
     compactDisplay: "short",
+    maximumFractionDigits: 1,
   }).format(num);
 }
 
@@ -126,9 +128,12 @@ export function UserDetailDialog({ user, isOpen, onOpenChange }: UserDetailDialo
             </div>
           </div>
 
-          {/* Stats — compact number only, no duplicate exact number */}
+          {/* Stats */}
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5 sm:p-3 text-center">
+            <div
+              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5 sm:p-3 text-center"
+              title={`Posts: ${posts.toLocaleString()}`}
+            >
               <div className="flex items-center justify-center gap-1 text-zinc-400 mb-1">
                 <Grid className="w-3 h-3" />
                 <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wider">Posts</span>
@@ -138,7 +143,10 @@ export function UserDetailDialog({ user, isOpen, onOpenChange }: UserDetailDialo
               </div>
             </div>
 
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5 sm:p-3 text-center">
+            <div
+              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5 sm:p-3 text-center"
+              title={`Followers: ${followers.toLocaleString()}`}
+            >
               <div className="flex items-center justify-center gap-1 text-zinc-400 mb-1">
                 <Users className="w-3 h-3" />
                 <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wider">Followers</span>
@@ -148,7 +156,10 @@ export function UserDetailDialog({ user, isOpen, onOpenChange }: UserDetailDialo
               </div>
             </div>
 
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5 sm:p-3 text-center">
+            <div
+              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5 sm:p-3 text-center"
+              title={`Following: ${following.toLocaleString()}`}
+            >
               <div className="flex items-center justify-center gap-1 text-zinc-400 mb-1">
                 <UserPlus className="w-3 h-3" />
                 <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wider">Following</span>
