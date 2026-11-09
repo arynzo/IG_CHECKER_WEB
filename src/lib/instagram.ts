@@ -26,14 +26,23 @@ export interface CheckResult {
   profile?: UserProfileInfo;
 }
 
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 8000;
 const TOKEN_ENDPOINT = "https://auto.arynzo.xyz/api/igt/token";
+
+let cachedAuthToken: { token: string; expiresAt: number } | null = null;
+const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
 
 /**
  * Fetches the latest Instagram Authorization Bearer token from the remote token service.
+ * Uses in-memory caching to prevent redundant HTTP lookups across batches.
  * Falls back to process.env.INSTAGRAM_AUTH_TOKEN if the service fails or returns invalid data.
  */
-export async function fetchInstagramAuthToken(): Promise<string | undefined> {
+export async function fetchInstagramAuthToken(forceRefresh = false): Promise<string | undefined> {
+  const now = Date.now();
+  if (!forceRefresh && cachedAuthToken && now < cachedAuthToken.expiresAt) {
+    return cachedAuthToken.token;
+  }
+
   try {
     const res = await fetch(TOKEN_ENDPOINT, {
       method: "GET",
@@ -55,7 +64,12 @@ export async function fetchInstagramAuthToken(): Promise<string | undefined> {
         typeof data.token === "string" &&
         data.token.trim().length > 0
       ) {
-        return data.token.trim();
+        const token = data.token.trim();
+        cachedAuthToken = {
+          token,
+          expiresAt: now + TOKEN_CACHE_TTL_MS,
+        };
+        return token;
       }
     }
   } catch (err) {
@@ -64,6 +78,10 @@ export async function fetchInstagramAuthToken(): Promise<string | undefined> {
 
   // Fallback to local environment variable if available
   return process.env.INSTAGRAM_AUTH_TOKEN?.trim();
+}
+
+export function invalidateAuthTokenCache(): void {
+  cachedAuthToken = null;
 }
 
 /**
@@ -303,6 +321,10 @@ export async function checkInstagramUsername(
           profilePicUrl = mergedUserData.profile_pic_url;
         }
 
+        if (profilePicUrl) {
+          profilePicUrl = profilePicUrl.replace(/&amp;/g, "&");
+        }
+
         // Extract biography
         let biography = "";
         if (typeof mergedUserData.biography === "string") {
@@ -406,6 +428,7 @@ export async function checkInstagramUsername(
 
     // HTTP 401 / 403: Authorization issue
     if (statusCode === 401 || statusCode === 403) {
+      invalidateAuthTokenCache();
       return {
         username: cleanUsername,
         status: "error",

@@ -7,8 +7,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MAX_USERNAMES = 500;
-const CONCURRENCY_LIMIT = 5;
+const MAX_USERNAMES = 1000;
+const CONCURRENCY_LIMIT = 20;
 
 /**
  * Worker pool helper for executing tasks with controlled concurrency.

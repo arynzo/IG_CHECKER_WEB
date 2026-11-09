@@ -68,7 +68,18 @@ export function CheckDialog({
             {usernames.length}{" "}
             {usernames.length === 1 ? "username" : "usernames"}
           </span>{" "}
-          found and queued for verification.
+          found and queued for verification
+          {usernames.length > 300 ? (
+            <span className="block mt-1 text-zinc-400">
+              ⚡ Will be checked in{" "}
+              <span className="text-zinc-200 font-medium">
+                {Math.ceil(usernames.length / 300)} batches
+              </span>{" "}
+              (split into 300 usernames per batch).
+            </span>
+          ) : (
+            "."
+          )}
         </DialogDescription>
 
         <DialogFooter className="mt-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useId } from "react";
+import React, { useState, useId, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Loader2,
@@ -41,8 +41,11 @@ export function UsernameInput({
   const [pasteDone, setPasteDone] = useState(false);
   const textareaId = useId();
 
-  const parsedUsernames = parseUsernames(input);
-  const lineCount = input.trim() ? input.split(/\r?\n/).length : 0;
+  const parsedUsernames = useMemo(() => parseUsernames(input), [input]);
+  const lineCount = useMemo(
+    () => (input.trim() ? input.split(/\r?\n/).length : 0),
+    [input]
+  );
 
   const handleStart = () => {
     setValidationError(null);

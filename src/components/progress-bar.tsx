@@ -2,14 +2,16 @@
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import { Layers } from "lucide-react";
 
 interface ProgressBarProps {
   current: number;
   total: number;
   isChecking: boolean;
+  batchInfo?: { currentBatch: number; totalBatches: number } | null;
 }
 
-export function ProgressBar({ current, total, isChecking }: ProgressBarProps) {
+export function ProgressBar({ current, total, isChecking, batchInfo }: ProgressBarProps) {
   if (!isChecking && total === 0) return null;
 
   const percentage = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
@@ -17,7 +19,7 @@ export function ProgressBar({ current, total, isChecking }: ProgressBarProps) {
   return (
     <div className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 shadow-lg space-y-2">
       <div className="flex items-center justify-between text-xs sm:text-sm">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isChecking && (
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-zinc-400 opacity-75"></span>
@@ -29,6 +31,13 @@ export function ProgressBar({ current, total, isChecking }: ProgressBarProps) {
               ? `Checking ${current} / ${total}`
               : `Completed ${current} of ${total} usernames`}
           </span>
+
+          {batchInfo && batchInfo.totalBatches > 1 && isChecking && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-300 border border-zinc-700">
+              <Layers className="w-2.5 h-2.5 text-zinc-400" />
+              Batch {batchInfo.currentBatch} / {batchInfo.totalBatches}
+            </span>
+          )}
         </div>
         <span className="font-mono text-zinc-400 font-semibold">{percentage}%</span>
       </div>

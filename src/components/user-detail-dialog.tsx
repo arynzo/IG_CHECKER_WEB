@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import {
   Grid,
   Users,
   UserPlus,
+  Loader2,
 } from "lucide-react";
 import type { CheckResult } from "@/lib/instagram";
 
@@ -39,16 +40,46 @@ function formatNumber(num?: number): string {
 export function UserDetailDialog({ user, isOpen, onOpenChange }: UserDetailDialogProps) {
   const [copied, setCopied] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [useDirectUrl, setUseDirectUrl] = useState(false);
+
+  // Reset state when active user or dialog open state changes
+  useEffect(() => {
+    setImageError(false);
+    setImageLoaded(false);
+    setUseDirectUrl(false);
+    setCopied(false);
+  }, [user?.username, isOpen]);
 
   if (!user || user.status !== "active") return null;
 
   const profile = user.profile;
-  // Always show fullName as title; if empty fall back to "(No name)" so @username stays separate
   const fullName = profile?.fullName?.trim() || "(No name)";
   const posts = profile?.mediaCount ?? 0;
   const followers = profile?.followerCount ?? 0;
   const following = profile?.followingCount ?? 0;
   const bio = profile?.biography?.trim();
+
+  // Clean raw profile picture URL
+  const rawPicUrl = profile?.profilePicUrl?.replace(/&amp;/g, "&");
+
+  // Choose between proxy URL and direct fallback URL
+  const imageSrc = rawPicUrl
+    ? useDirectUrl
+      ? rawPicUrl
+      : `/api/proxy-image?url=${encodeURIComponent(rawPicUrl)}`
+    : null;
+
+  const handleImageError = () => {
+    if (!useDirectUrl && rawPicUrl) {
+      // If proxy failed, attempt direct load
+      setUseDirectUrl(true);
+    } else {
+      // Both proxy and direct failed, show fallback initials
+      setImageError(true);
+      setImageLoaded(true);
+    }
+  };
 
   const handleCopyUsername = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -68,15 +99,27 @@ export function UserDetailDialog({ user, isOpen, onOpenChange }: UserDetailDialo
           {/* Header: Avatar · Full Name · @username */}
           <div className="flex items-start gap-3 sm:gap-4 pr-8">
             <div className="relative shrink-0">
-              {profile?.profilePicUrl && !imageError ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={profile.profilePicUrl}
-                  alt={user.username}
-                  referrerPolicy="no-referrer"
-                  onError={() => setImageError(true)}
-                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-zinc-800 bg-zinc-900 shadow-md"
-                />
+              {imageSrc && !imageError ? (
+                <div className="relative w-14 h-14 sm:w-16 sm:h-16">
+                  {/* Loading placeholder skeleton */}
+                  {!imageLoaded && (
+                    <div className="absolute inset-0 rounded-full bg-zinc-800 animate-pulse flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 text-zinc-500 animate-spin" />
+                    </div>
+                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    key={`${user.username}-${useDirectUrl ? "direct" : "proxy"}`}
+                    src={imageSrc}
+                    alt={user.username}
+                    referrerPolicy="no-referrer"
+                    onLoad={() => setImageLoaded(true)}
+                    onError={handleImageError}
+                    className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-zinc-800 bg-zinc-900 shadow-md transition-opacity duration-200 ${
+                      imageLoaded ? "opacity-100" : "opacity-0"
+                    }`}
+                  />
+                </div>
               ) : (
                 <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-zinc-900 border-2 border-zinc-800 flex items-center justify-center text-lg sm:text-xl font-bold text-zinc-300">
                   {user.username.slice(0, 2).toUpperCase()}
@@ -123,8 +166,6 @@ export function UserDetailDialog({ user, isOpen, onOpenChange }: UserDetailDialo
                   </Badge>
                 )}
               </div>
-
-
             </div>
           </div>
 

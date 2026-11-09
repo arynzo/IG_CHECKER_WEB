@@ -10,6 +10,8 @@ import { StatusAlerts } from "@/components/status-alerts";
 import { UserDetailDialog } from "@/components/user-detail-dialog";
 import type { CheckResult } from "@/lib/instagram";
 
+const BATCH_SIZE = 300;
+
 export default function HomePage() {
   const [inputText, setInputText] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -23,6 +25,10 @@ export default function HomePage() {
     current: 0,
     total: 0,
   });
+  const [batchInfo, setBatchInfo] = useState<{
+    currentBatch: number;
+    totalBatches: number;
+  } | null>(null);
 
   const [selectedActiveUser, setSelectedActiveUser] =
     useState<CheckResult | null>(null);
@@ -60,136 +66,207 @@ export default function HomePage() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    try {
-      const response = await fetch("/api/check-usernames", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/x-ndjson, application/json",
-        },
-        body: JSON.stringify({
-          usernames: queuedUsernames,
-          stream: true,
-        }),
-        signal: controller.signal,
-      });
+    // Chunk queuedUsernames into batches of 300
+    const batches: string[][] = [];
+    for (let i = 0; i < queuedUsernames.length; i += BATCH_SIZE) {
+      batches.push(queuedUsernames.slice(i, i + BATCH_SIZE));
+    }
 
-      if (!response.ok) {
-        let errorMsg = `Server returned status ${response.status}`;
-        try {
-          const errData = await response.json();
-          if (errData.error) errorMsg = errData.error;
-        } catch {
-          // ignore json parse error
-        }
+    setBatchInfo({
+      currentBatch: 1,
+      totalBatches: batches.length,
+    });
 
-        setErrorList(
-          queuedUsernames.map((u) => ({
-            username: u,
-            status: "error",
-            error: errorMsg,
-          })),
-        );
-        setIsChecking(false);
-        return;
+    let totalProcessed = 0;
+
+    // High-performance buffering to prevent frequent React re-renders & UI lag
+    let bufferActive: CheckResult[] = [];
+    let bufferSuspended: CheckResult[] = [];
+    let bufferError: CheckResult[] = [];
+    let lastFlushTime = performance.now();
+
+    const flushBuffers = () => {
+      if (bufferActive.length > 0) {
+        const toAdd = bufferActive;
+        bufferActive = [];
+        setActiveList((prev) => [...prev, ...toAdd]);
       }
+      if (bufferSuspended.length > 0) {
+        const toAdd = bufferSuspended;
+        bufferSuspended = [];
+        setSuspendedList((prev) => [...prev, ...toAdd]);
+      }
+      if (bufferError.length > 0) {
+        const toAdd = bufferError;
+        bufferError = [];
+        setErrorList((prev) => [...prev, ...toAdd]);
+      }
+    };
 
-      // Handle streaming NDJSON response
-      if (response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let count = 0;
+    try {
+      for (let bIndex = 0; bIndex < batches.length; bIndex++) {
+        if (controller.signal.aborted) break;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        setBatchInfo({
+          currentBatch: bIndex + 1,
+          totalBatches: batches.length,
+        });
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          // The last element is either empty or an incomplete line
-          buffer = lines.pop() || "";
+        const currentBatch = batches[bIndex];
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
+        try {
+          const response = await fetch("/api/check-usernames", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/x-ndjson, application/json",
+            },
+            body: JSON.stringify({
+              usernames: currentBatch,
+              stream: true,
+            }),
+            signal: controller.signal,
+          });
 
+          if (!response.ok) {
+            let errorMsg = `Server error ${response.status}`;
             try {
-              const item = JSON.parse(trimmed) as CheckResult;
-              count++;
-              setProgress({ current: count, total: queuedUsernames.length });
-
-              if (item.status === "active") {
-                setActiveList((prev) => [...prev, item]);
-              } else if (item.status === "suspended") {
-                setSuspendedList((prev) => [...prev, item]);
-              } else {
-                setErrorList((prev) => [...prev, item]);
-              }
+              const errData = await response.json();
+              if (errData.error) errorMsg = errData.error;
             } catch {
-              // Ignore malformed chunk lines
+              // ignore
             }
-          }
-        }
 
-        // Process any remaining buffer
-        if (buffer.trim()) {
-          try {
-            const item = JSON.parse(buffer.trim()) as CheckResult;
-            count++;
-            setProgress({ current: count, total: queuedUsernames.length });
-
-            if (item.status === "active") {
-              setActiveList((prev) => [...prev, item]);
-            } else if (item.status === "suspended") {
-              setSuspendedList((prev) => [...prev, item]);
-            } else {
-              setErrorList((prev) => [...prev, item]);
+            for (const u of currentBatch) {
+              totalProcessed++;
+              bufferError.push({ username: u, status: "error", error: errorMsg });
             }
-          } catch {
-            // Ignore
+            flushBuffers();
+            setProgress({ current: totalProcessed, total: queuedUsernames.length });
+            continue;
           }
-        }
-      } else {
-        // Fallback for non-streaming response
-        const data = await response.json();
-        const results = (data.results || []) as CheckResult[];
-        const actives: CheckResult[] = [];
-        const suspended: CheckResult[] = [];
-        const errors: CheckResult[] = [];
 
-        for (const item of results) {
-          if (item.status === "active") {
-            actives.push(item);
-          } else if (item.status === "suspended") {
-            suspended.push(item);
+          // Progressive streaming response
+          if (response.body) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let streamBuffer = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              streamBuffer += decoder.decode(value, { stream: true });
+              const lines = streamBuffer.split("\n");
+              streamBuffer = lines.pop() || "";
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                try {
+                  const item = JSON.parse(trimmed) as CheckResult;
+                  totalProcessed++;
+
+                  if (item.status === "active") {
+                    bufferActive.push(item);
+                  } else if (item.status === "suspended") {
+                    bufferSuspended.push(item);
+                  } else {
+                    bufferError.push(item);
+                  }
+
+                  // Throttle state flushes to every ~60ms for smooth 60fps rendering
+                  const now = performance.now();
+                  if (now - lastFlushTime > 60) {
+                    flushBuffers();
+                    setProgress({
+                      current: totalProcessed,
+                      total: queuedUsernames.length,
+                    });
+                    lastFlushTime = now;
+                  }
+                } catch {
+                  // Ignore malformed chunk
+                }
+              }
+            }
+
+            // Flush any remaining buffer in stream
+            if (streamBuffer.trim()) {
+              try {
+                const item = JSON.parse(streamBuffer.trim()) as CheckResult;
+                totalProcessed++;
+                if (item.status === "active") {
+                  bufferActive.push(item);
+                } else if (item.status === "suspended") {
+                  bufferSuspended.push(item);
+                } else {
+                  bufferError.push(item);
+                }
+              } catch {
+                // Ignore
+              }
+            }
+
+            flushBuffers();
+            setProgress({
+              current: totalProcessed,
+              total: queuedUsernames.length,
+            });
+            lastFlushTime = performance.now();
           } else {
-            errors.push(item);
-          }
-        }
+            // Non-streaming fallback
+            const data = await response.json();
+            const results = (data.results || []) as CheckResult[];
 
-        setActiveList(actives);
-        setSuspendedList(suspended);
-        setErrorList(errors);
-        setProgress({ current: results.length, total: results.length });
+            for (const item of results) {
+              totalProcessed++;
+              if (item.status === "active") {
+                bufferActive.push(item);
+              } else if (item.status === "suspended") {
+                bufferSuspended.push(item);
+              } else {
+                bufferError.push(item);
+              }
+            }
+
+            flushBuffers();
+            setProgress({
+              current: totalProcessed,
+              total: queuedUsernames.length,
+            });
+          }
+        } catch (batchErr: unknown) {
+          if (batchErr instanceof Error && batchErr.name === "AbortError") {
+            break;
+          }
+
+          const errText =
+            batchErr instanceof Error
+              ? batchErr.message
+              : "Failed to connect to server";
+
+          for (const u of currentBatch) {
+            totalProcessed++;
+            bufferError.push({ username: u, status: "error", error: errText });
+          }
+          flushBuffers();
+          setProgress({
+            current: totalProcessed,
+            total: queuedUsernames.length,
+          });
+        }
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
-        // User aborted
         return;
       }
-      setErrorList(
-        queuedUsernames.map((u) => ({
-          username: u,
-          status: "error",
-          error:
-            err instanceof Error ? err.message : "Failed to connect to server",
-        })),
-      );
     } finally {
+      flushBuffers();
       setIsChecking(false);
       setTimeTaken(
-        Math.round((performance.now() - startTimeRef.current) / 100) / 10,
+        Math.round((performance.now() - startTimeRef.current) / 100) / 10
       );
       abortControllerRef.current = null;
     }
@@ -248,6 +325,7 @@ export default function HomePage() {
               current={progress.current}
               total={progress.total}
               isChecking={isChecking}
+              batchInfo={batchInfo}
             />
           </section>
         )}
@@ -303,7 +381,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-zinc-900 py-6 text-center text-xs text-zinc-500 px-4">
         <p>
-          Instagram Username Checker • Server-side verification & controlled
+          Instagram Username Checker • Server-side verification &amp; controlled
           concurrency
         </p>
       </footer>

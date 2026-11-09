@@ -158,7 +158,6 @@ function SingleResultCard({
                   <motion.div
                     key={`${username}-${idx}`}
                     variants={listItemVariants}
-                    layout
                     onClick={() => {
                       if (isActive && onSelectUser) {
                         onSelectUser(item);
